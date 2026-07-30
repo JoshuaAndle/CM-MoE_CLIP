@@ -5,7 +5,7 @@ Ongoing repository for work adapting MoE-CLIP to an online CL setting and implem
 
 
 # CLIP Implementation
-This work is currently being revised to work with CLIP in a multimodal transformer setting. The transformer code is based off of the code for "CLIP Model is an Efficient Online Continual Learner" (Note, that repository is currently unavailable but a link will be provided to it when available again). The original code provides the framework for OCL with a variety of benchmark methods. The work unique to this project is to extend this framework by implementing the "MoA-CLIP" method to implement a variant of the clustering and merging algorithm used in the CNN implementation. 
+This work is currently being revised to work with CLIP in a multimodal transformer setting. The transformer code is based off of the code for "CLIP Model is an Efficient Online Continual Learner" located at https://github.com/Debatrix/LifeLong-CLIP. The original code provides the framework for OCL with a variety of benchmark methods. We extend this framework to an online continual-learning framework with distribution shifts between tasks (e.g. rotations, blur) and by implementing our own "CM-MoE" method. CM-MoE implements a variant of the clustering and merging algorithm used in the CNN implementation to consolidate similar or redundant experts and provides a bounded growth of the overall model. 
 
 
 
@@ -17,10 +17,9 @@ An implementation of the underlying merging and clustering algorithm was initial
 
 
 
-@misc{
-wang2025clip,
-title={{CLIP} model is an Efficient Online Continual Learner},
-author={Leyuan Wang and Liuyu Xiang and Yujie Wei and Yunlong Wang and Zhaofeng He},
-year={2025},
-url={https://openreview.net/forum?id=G9Ea7mlqGO}
+@article{wang2024clip,
+  title={CLIP model is an Efficient Online Lifelong Learner},
+  author={Wang, Leyuan and Xiang, Liuyu and Wei, Yujie and Wang, Yunlong and He, Zhaofeng},
+  journal={arXiv preprint arXiv:2405.15155},
+  year={2024}
 }
