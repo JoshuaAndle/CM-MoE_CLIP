@@ -1,0 +1,194 @@
+
+
+from typing import Union, List
+
+import os
+import torch
+import torch.nn.functional as F
+import torch.optim as optim
+
+import logging
+
+import torchvision.models as models
+import torch.nn as nn
+from torch.utils.data import DataLoader
+
+
+from utils.train_utils import torch_save, torch_load, exp_lr_scheduler
+
+import clip
+from .clip import clip_loader
+from .clip.tokenizer import SimpleTokenizer as _Tokenizer
+
+
+
+_tokenizer = _Tokenizer()
+
+
+
+
+class ContinualCLIP(nn.Module):
+
+    def __init__(self, args, model_name='ViT-B/16', device='cpu'):
+        super(ContinualCLIP, self).__init__()
+        self.device = device
+        self.args = args
+
+        ### MoE-Adapters++ uses its own args setup for preparing the clip model, so we just pass in the args
+        self.design_details = {
+            'args': args
+        }
+
+        self.clip_model = clip_loader.load(model_name, device=self.device, jit=False, design_details=self.design_details)
+
+
+
+
+        # self.model, _ = clip.load(model_name, device=self.device, jit=False)
+        # self.model = clip_loader.load(model_name, device=self.device, jit=False, design_details={})
+
+        self.text_tokens = None
+        self.current_class_names = []
+
+
+        self.prompt_template = "a photo of a {}."
+
+
+    ### These should be redundant since the parent class is nn.module, but just to be safe we pass them explicitly to the trainable CLIP model
+    def eval(self):
+        self.clip_model.eval()
+
+    def train(self):
+        self.clip_model.train()
+
+
+
+
+
+    ### We implement the tokenization function from CLIP directly to store the eot tokens as a text-modal equivalent to cls tokens
+    def labels_tokenize(self, labels, context_length = 77) -> torch.LongTensor:
+        """
+        Returns the tokenized representation of given input string(s)
+        Parameters
+        ----------
+        labels : Union[str, List[str]]
+            An input string or a list of labels to tokenize
+        context_length : int
+            The context length to use; all CLIP models use 77 as the context length
+        Returns
+        -------
+        A two-dimensional tensor containing the resulting tokens, shape = [number of input strings, context_length]
+        """
+        if isinstance(labels, str):
+            labels = [labels]
+
+
+        texts = [self.prompt_template.format(c) for c in labels]
+        # print("\nTokenization input: ", texts)
+
+        sot_token = _tokenizer.encoder["<start_of_text>"]
+        eot_token = _tokenizer.encoder["<end_of_text>"]
+        all_tokens = [[sot_token] + _tokenizer.encode(text) + [eot_token]
+                      for text in texts]
+
+        ### Record locations of eot tokens for debugging purposes
+        # self.eot_indices = [len(all_tokens[idx]) - 1 for idx in range(len(all_tokens))]
+
+        result = torch.zeros(len(all_tokens), context_length, dtype=torch.long)
+
+        for i, tokens in enumerate(all_tokens):
+            if len(tokens) > context_length:  # Truncate
+                ### Changing from the initial implementation to ensure eot_token is not removed
+                # tokens = tokens[:context_length]
+                tokens = tokens[:context_length-1] + [eot_token]
+            result[i, :len(tokens)] = torch.tensor(tokens)
+
+        # self.current_class_tokens = result
+
+        return result.to(self.device)
+
+    # def update_class_names(self, new_class_names):
+    #     _num = 0
+    #     for c in new_class_names:
+    #         if c not in self.current_class_names:
+    #             self.current_class_names.append(c)
+    #             _num += 1
+    #     if _num > 0:
+    #         self.text_tokens = self.labels_tokenize(self.current_class_names)
+    #     return self.text_tokens
+
+    def reset_class_names(self, new_class_names):
+        if new_class_names != self.current_class_names:
+            self.current_class_names = new_class_names
+            self.text_tokens = self.labels_tokenize(self.current_class_names)
+            return True # Indicating whether tokenized labels were modified
+        return False
+
+
+    def forward(self, image, text_tokens=None):
+        if text_tokens is None:
+            text_tokens = self.text_tokens
+
+        logits_per_image, _, image_features, text_features = self.clip_model(image, text_tokens)
+        probs = logits_per_image.softmax(dim=-1)
+        return probs, image_features, text_features
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # def update_class_names(self, new_class_names):
+    #     _num = 0
+    #     for c in new_class_names:
+    #         if c not in self.current_class_names:
+    #             self.current_class_names.append(c)
+    #             _num += 1
+    #     if _num > 0:
+    #         self.text_tokens = clip.tokenize([
+    #                                         self.prompt_template.format(c)
+    #                                         for c in self.current_class_names
+    #                                         ])
+    #     self.text_tokens = self.text_tokens.to(self.device)
+    #     return self.text_tokens
+
+
+    # def reset_class_names(self, new_class_names):
+    #     _num = 0
+    #     self.current_class_names = new_class_names
+    #     self.text_tokens = self.labels_tokenize(self.current_class_names)
+    #     return self.text_tokens
+
+
+    # def forward(self, image):
+    #     with torch.no_grad():
+    #         logits_per_image, _ = self.model(image, self.text_tokens)
+    #         probs = logits_per_image.softmax(dim=-1)
+    #     return probs
